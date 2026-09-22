@@ -131,7 +131,7 @@ FeReactionNetwork::getMonitorDataHeaderString() const
 		header << speciesName << "_density_CD " << speciesName << "_diameter_CD "
                            << speciesName << "_partial_density_CD " << speciesName << "_partial_diameter_CD "
 			   << speciesName << "_number_density_SSBM " << speciesName << "_diameter_SSBM "
-                           << speciesName << "_partial_number_density_SSBM " << speciesName << "_partial_diameter_SSBM "
+                           << speciesName << "_bubble_concentration_SSBM " << speciesName << "_bubble_diameter_SSBM "
 			   << speciesName << "_density_Total " << speciesName << "_diameter_Total "
                            << speciesName << "_partial_density_Total " << speciesName << "_partial_diameter_Total ";
 	}
@@ -217,11 +217,11 @@ FeReactionNetwork::addMonitorDataValues(Kokkos::View<const double*> conc,
 			totalVals[2+(12 * id()) + 8] += vConc * fac;
                         totalVals[2+(12 * id()) + 9] += vConc * avRadius * 2.0 * fac;
 
+			totalVals[2+(12 * id()) + 6] = conc(0) * fac;
 
 			//Partial size calcuation
 			if (avComp > minSizes[id()]) {
-				totalVals[2+(12 * id()) + 6] = avComp * fac;
-				totalVals[2+(12 * id()) + 7] = avComp * avRadius * 2.0 * fac;
+				totalVals[2+(12 * id()) + 7] = conc(0) * fac; 
 				totalVals[2+(12 * id()) + 10] += vConc * fac;
                                 totalVals[2+(12 * id()) + 11] += vConc * avRadius * 2.0 * fac;
 			}
@@ -311,42 +311,35 @@ FeReactionNetwork::writeMonitorDataLine(
 		// Average the data
 		for (auto i = 0; i < numSpecies; ++i) {
 			auto id = [i](std::size_t n) { return 2 + 12 * i + n; };
-			// He diameter in std model
+			// He/V diameter in std model
 			if (globalData[id(0)] > 1.0e-16) {
 				globalData[id(1)] /= globalData[id(0)];
 			}
 			else
 				globalData[id(1)] = 0.0;
 			
-			// V diameter std model
+			// He/V partial diameter std model
 			if (globalData[id(2)] > 1.0e-16) {
 				globalData[id(3)] /= globalData[id(2)];
 			}
 			else
                                 globalData[id(3)] = 0.0;
 			
-			// He diameter in SSBM
+			// He/V diameter in SSBM
 			if (globalData[id(4)] > 1.0e-16) {
                                 globalData[id(5)] /= globalData[id(4)];
                         }
                         else
                                 globalData[id(5)] = 0.0;
 			
-			// V diameter in SSBM
-			if (globalData[id(6)] > 1.0e-16) {
-                                globalData[id(7)] /= globalData[id(6)];
-			}
-			else
-                                globalData[id(7)] = 0.0;
-
-			// He diameter std + SSBM
+			// He/V diameter std + SSBM
 			if (globalData[id(8)] > 1.0e-16) {
                                 globalData[id(9)] /= globalData[id(8)];
                         }
                         else
                                 globalData[id(9)] = 0.0;
 
-			// V diameter in std + SSBM 
+			// He/V partial diameter in std + SSBM 
 			if (globalData[id(10)] > 1.0e-16) {
                                 globalData[id(11)] /= globalData[id(10)];
                         }

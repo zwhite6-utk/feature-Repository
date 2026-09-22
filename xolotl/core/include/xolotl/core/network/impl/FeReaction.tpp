@@ -185,6 +185,8 @@ FeProductionReaction::computeFlux(
 			this->_reactants[0] :
 			this->_reactants[1];
 
+//		ssbmId = 0;
+
 		// Compute the flux
 		double f = this->_coefs(0, 0, 0, 0) * concentrations(stdClusterId) *
 			concentrations(ssbmId) * rate;
@@ -197,6 +199,7 @@ FeProductionReaction::computeFlux(
 
 			// The V size increases (kind of cheating on the ID)
 			Kokkos::atomic_add(&fluxes[ssbmId + 2], f * comp[Species::V]);
+
 		}
 
 		// Interstitial case
@@ -207,7 +210,8 @@ FeProductionReaction::computeFlux(
 			// Special factor to deal with the threshold size
 				double gauss = 1.0;
 
-				// Special case where the product is not the single size
+/*				// Special case where the product is not the single size
+				// I_k + B -> HeV
 				if (this->_products[0] < numClusters) {
 					// Only if the large void has a specific size
 					auto avVoid =
@@ -241,7 +245,7 @@ FeProductionReaction::computeFlux(
 							(prComp[Species::V]) *
 							gauss);
 				}
-
+*/
 				// In every case
 
 				// The standard cluster always loses the flux
@@ -253,15 +257,17 @@ FeProductionReaction::computeFlux(
 			}
 		
 
-		// H case
-		// H_k + B -> B
+		// He case
+		// He_k + B -> B
 			if (comp[Species::He] > 0) {
 				// The standard cluster always loses the flux
 			Kokkos::atomic_sub(&fluxes[stdClusterId], f);
 
 			// The He size increases
 			Kokkos::atomic_add(&fluxes[ssbmId + 1], f * comp[Species::He]);
+
 			}
+	
 	}
 
 	// Large bubble is one of the product
@@ -283,34 +289,34 @@ FeProductionReaction::computeFlux(
 		// V_a + HV_b -> B
 		if (orig1.isOnAxis(Species::V) or orig2.isOnAxis(Species::V)) {
 			// Compute the total size
-			auto totalSize = comp1[Species::V] + comp2[Species::V];
+			auto totalHeSize = comp1[Species::He] + comp2[Species::He];
+			auto totalVSize = comp1[Species::V] + comp2[Species::V];
 			// Both reactants decrease
 			Kokkos::atomic_sub(&fluxes[this->_reactants[0]], f);
 			Kokkos::atomic_sub(&fluxes[this->_reactants[1]], f);
 			// The large bubble increases, as well as average V and H
 			Kokkos::atomic_add(&fluxes[this->_products[0]], f);
-			Kokkos::atomic_add(&fluxes[this->_products[0] + 2], f * totalSize);
-				totalSize = comp1[Species::He] + comp2[Species::He];
-				Kokkos::atomic_add(
-					&fluxes[this->_products[0] + 1], f * totalSize);
+			Kokkos::atomic_add(&fluxes[this->_products[0] + 1], f * totalHeSize);
+			Kokkos::atomic_add(&fluxes[this->_products[0] + 2], f * totalVSize);
 		}
 
-		// H case
-		// H_a + H_bV -> B
+		// He case
+		// He_a + He_bV -> B
 			if (orig1.isOnAxis(Species::He) or orig2.isOnAxis(Species::He)) {
 				// Compute the total size
-				auto totalDSize = comp1[Species::He] + comp2[Species::He];
+				auto totalHeSize = comp1[Species::He] + comp2[Species::He];
 				auto totalVSize = comp1[Species::V] + comp2[Species::V];
 				// Both reactants decrease
 				Kokkos::atomic_sub(&fluxes[this->_reactants[0]], f);
 				Kokkos::atomic_sub(&fluxes[this->_reactants[1]], f);
-				// The large bubble increases, as well as average H and V
+				// The large bubble increases, as well as average He and V
 				Kokkos::atomic_add(&fluxes[this->_products[0]], f);
 				Kokkos::atomic_add(
-					&fluxes[this->_products[0] + 1], f * totalDSize);
+					&fluxes[this->_products[0] + 1], f * totalHeSize);
 				Kokkos::atomic_add(
-					&fluxes[this->_products[0] + 2], f * totalVSize);
+                                        &fluxes[this->_products[0] + 2], f * totalVSize);
 			}
+
 	}
 }
 
@@ -350,6 +356,9 @@ FeProductionReaction::computePartialDerivatives(
 		auto ssbmId = (this->_reactants[0] >= numClusters) ?
 			this->_reactants[0] :
 			this->_reactants[1];
+
+//		ssbmId = 0;
+
 		// Get the concentrations
 		auto stdC = concentrations(stdClusterId);
 		auto bC = concentrations(ssbmId);
@@ -378,29 +387,16 @@ FeProductionReaction::computePartialDerivatives(
 			f = this->_coefs(0, 0, 0, 0) * rate * comp[Species::V];
 			if (this->_reactants[0] >= numClusters) {
 				Kokkos::atomic_add(
-					&values(this->_connEntries[0][3][0][0]), f * stdC);
+					&values(this->_connEntries[0][2][0][0]), f * stdC);
 				Kokkos::atomic_add(
-					&values(this->_connEntries[0][3][1][0]), f * bC);
+					&values(this->_connEntries[0][2][1][0]), f * bC);
 			}
 			else {
 				Kokkos::atomic_add(
-					&values(this->_connEntries[1][3][1][0]), f * stdC);
+					&values(this->_connEntries[1][2][1][0]), f * stdC);
 				Kokkos::atomic_add(
-					&values(this->_connEntries[1][3][0][0]), f * bC);
+					&values(this->_connEntries[1][2][0][0]), f * bC);
 			}
-
-			//_connEntries[][][][] understanding still shaky, looked over 800H, H-Blister, and Reaction.cpp files
-			//the work shown here is the copied directly from H-Blister file, although I think we may need to change this
-			//if instability still occur, this is my first suspect
-			// current understanding of _connEntries[a][b][c][d]
-			// a is the term we are looking at in the reaction ~ A+B -> C
-			// A is 0, B is 1, C is 2
-			// b is the derivative we want to take respect to
-			// Trap is 0, He is 1, V is 2, I is 3 (in H-Blister different species are involved thus a differnt ordering)
-			// c is the moment ordering 
-			// 0 is zeroth moment, 1 is first moment, 2 is second moment
-			// d is something I am not sure of
-			// Please correct if I am missing something/everything
 		}
 		// Interstitial case
 		if (comp[Species::I] > 0) {
@@ -411,11 +407,12 @@ FeProductionReaction::computePartialDerivatives(
 			// The reaction can happen only if the average V is larger than the
 			// threshold and if the H/V ratio is realistic
 			auto avV = concentrations(ssbmId + 2) / concentrations(ssbmId);
-			auto avH = concentrations(ssbmId + 1) / concentrations(ssbmId);
+			auto avHe = concentrations(ssbmId + 1) / concentrations(ssbmId);
 			if (concentrations(ssbmId) == 0.0) {
 				avV = 0.0;
-				avH = 0.0;
+				avHe = 0.0;
 			}
+			
 
 			// Get the product composition
 					auto pr =
@@ -432,9 +429,60 @@ FeProductionReaction::computePartialDerivatives(
 									   twoSigmaTwo) /
 						sqrt(::xolotl::core::pi * twoSigmaTwo);
 
+/*			// I_k + B -> HeV
+                        if (this->_products[0] < numClusters) {
+				// The standard cluster always loses the flux
+	                        f = this->_coefs(0, 0, 0, 0) * rate * gauss;
+				if (this->_reactants[0] >= numClusters) {
+	                                Kokkos::atomic_sub(
+                                	        &values(this->_connEntries[1][0][0][0]), f * stdC);
+                        	        Kokkos::atomic_sub(
+                	                        &values(this->_connEntries[1][0][1][0]), f * bC);
+        	                }
+	                        else {
+                                	Kokkos::atomic_sub(
+                        	                &values(this->_connEntries[0][0][1][0]), f * stdC);
+                	                Kokkos::atomic_sub(
+        	                                &values(this->_connEntries[0][0][0][0]), f * bC);
+	                        }
 
+
+
+                                // The large bubble concentration decreases
+        	                if (this->_reactants[0] >= numClusters) {
+	                                Kokkos::atomic_sub(
+                                	        &values(this->_connEntries[0][1][0][0]), f * stdC * avHe);
+                        	        Kokkos::atomic_sub(
+                	                        &values(this->_connEntries[0][1][1][0]), f * bC * avHe);
+					Kokkos::atomic_sub(
+                                                &values(this->_connEntries[0][2][0][0]), f * stdC * avV);
+                                        Kokkos::atomic_sub(
+                                                &values(this->_connEntries[0][2][1][0]), f * bC * avV);
+        	                }
+	                        else {
+					Kokkos::atomic_sub(
+                                                &values(this->_connEntries[1][1][1][0]), f * stdC * avHe);
+                                        Kokkos::atomic_sub(
+                                                &values(this->_connEntries[1][1][0][0]), f * bC * avHe);
+                                	Kokkos::atomic_sub(
+                        	                &values(this->_connEntries[1][2][1][0]), f * stdC * avV);
+                	                Kokkos::atomic_sub(
+        	                                &values(this->_connEntries[1][2][0][0]), f * bC * avV);
+
+	                        }
+
+				// The product HeV concentration increases
+				Kokkos::atomic_add(
+                                        &values(this->_connEntries[2][0][0][0]), f * stdC * (avV + avHe));
+                                Kokkos::atomic_add(
+                                        &values(this->_connEntries[2][0][1][0]), f * bC * (avV + avHe));
+
+                        }
+*/
+//			else{
 			// The standard cluster always loses the flux
 			f = this->_coefs(0, 0, 0, 0) * rate * gauss;
+			// B + I_k -> B
 			if (this->_reactants[0] >= numClusters) {
 				Kokkos::atomic_sub(
 					&values(this->_connEntries[1][0][0][0]), f * stdC);
@@ -452,16 +500,17 @@ FeProductionReaction::computePartialDerivatives(
 			f = this->_coefs(0, 0, 0, 0) * rate * comp[Species::I] * gauss;
 			if (this->_reactants[0] >= numClusters) {
 				Kokkos::atomic_sub(
-					&values(this->_connEntries[0][3][0][0]), f * stdC);
+					&values(this->_connEntries[0][2][0][0]), f * stdC);
 				Kokkos::atomic_sub(
-					&values(this->_connEntries[0][3][1][0]), f * bC);
+					&values(this->_connEntries[0][2][1][0]), f * bC);
 			}
 			else {
 				Kokkos::atomic_sub(
-					&values(this->_connEntries[1][3][1][0]), f * stdC);
+					&values(this->_connEntries[1][2][1][0]), f * stdC);
 				Kokkos::atomic_sub(
-					&values(this->_connEntries[1][3][0][0]), f * bC);
+					&values(this->_connEntries[1][2][0][0]), f * bC);
 			}
+//			}
 		}
 
 		// He case
@@ -469,12 +518,14 @@ FeProductionReaction::computePartialDerivatives(
 				// He_k + B -> B
 
 				// The standard cluster always loses the flux
+				// B + He_k -> B
 				if (this->_reactants[0] >= numClusters) {
 					Kokkos::atomic_sub(
 						&values(this->_connEntries[1][0][0][0]), f * stdC);
 					Kokkos::atomic_sub(
 						&values(this->_connEntries[1][0][1][0]), f * bC);
 				}
+				// He_k + B -> B
 				else {
 					Kokkos::atomic_sub(
 						&values(this->_connEntries[0][0][1][0]), f * stdC);
@@ -484,20 +535,24 @@ FeProductionReaction::computePartialDerivatives(
 
 				// The He size increases
 				f = this->_coefs(0, 0, 0, 0) * rate * comp[Species::He];
+				// B + He_k -> B
 				if (this->_reactants[0] >= numClusters) {
 					Kokkos::atomic_add(
-						&values(this->_connEntries[0][2][0][0]), f * stdC);
+						&values(this->_connEntries[0][1][0][0]), f * stdC);
 					Kokkos::atomic_add(
-						&values(this->_connEntries[0][2][1][0]), f * bC);
+						&values(this->_connEntries[0][1][1][0]), f * bC);
 				}
+				// He_k + B -> B
 				else {
 					Kokkos::atomic_add(
-						&values(this->_connEntries[1][2][1][0]), f * stdC);
+						&values(this->_connEntries[1][1][1][0]), f * stdC);
 					Kokkos::atomic_add(
-						&values(this->_connEntries[1][2][0][0]), f * bC);
+						&values(this->_connEntries[1][1][0][0]), f * bC);
+
 				}
 
 			}
+	
 	}
 
 	// Large bubble is one of the product
@@ -516,7 +571,7 @@ FeProductionReaction::computePartialDerivatives(
 		double f = this->_coefs(0, 0, 0, 0) * rate;
 
 		// Vacancy case
-		// V_a + H_bV -> B
+		// V_a + He_bV -> B
 		if (orig1.isOnAxis(Species::V) or orig2.isOnAxis(Species::V)) {
 			// Both reactants decrease
 			Kokkos::atomic_sub(
@@ -528,23 +583,21 @@ FeProductionReaction::computePartialDerivatives(
 			Kokkos::atomic_sub(
 				&values(this->_connEntries[1][0][1][0]), f * cR1);
 
-			// The large bubble increases, as well as average H and V
+			// The large bubble increases, as well as average He and V
+			
+			f = this->_coefs(0, 0, 0, 0) * rate *
+                                (comp1[Species::He] + comp2[Species::He]);
 			Kokkos::atomic_add(
-				&values(this->_connEntries[2][0][0][0]), f * cR2);
+				&values(this->_connEntries[2][1][0][0]), f * cR2);
 			Kokkos::atomic_add(
-				&values(this->_connEntries[2][0][1][0]), f * cR1);
-				f = this->_coefs(0, 0, 0, 0) * rate *
-					(comp1[Species::He] + comp2[Species::He]);
-				Kokkos::atomic_add(
-					&values(this->_connEntries[2][2][0][0]), f * cR2);
-				Kokkos::atomic_add(
-					&values(this->_connEntries[2][2][1][0]), f * cR1);
+				&values(this->_connEntries[2][1][1][0]), f * cR1);
+				
 			f = this->_coefs(0, 0, 0, 0) * rate *
 				(comp1[Species::V] + comp2[Species::V]);
 			Kokkos::atomic_add(
-				&values(this->_connEntries[2][3][0][0]), f * cR2);
+				&values(this->_connEntries[2][2][0][0]), f * cR2);
 			Kokkos::atomic_add(
-				&values(this->_connEntries[2][3][1][0]), f * cR1);
+				&values(this->_connEntries[2][2][1][0]), f * cR1);
 		}
 
 		// He case
@@ -560,24 +613,24 @@ FeProductionReaction::computePartialDerivatives(
 				Kokkos::atomic_sub(
 					&values(this->_connEntries[1][0][1][0]), f * cR1);
 
-				// The large bubble increases, as well as average H and V
-				Kokkos::atomic_add(
-					&values(this->_connEntries[2][0][0][0]), f * cR2);
-				Kokkos::atomic_add(
-					&values(this->_connEntries[2][0][1][0]), f * cR1);
+				// The large bubble increases, as well as average He  
+
 				f = this->_coefs(0, 0, 0, 0) * rate *
-					(comp1[Species::He] + comp2[Species::He]);
+                                (comp1[Species::He] + comp2[Species::He]);
+				
+				Kokkos::atomic_add(
+					&values(this->_connEntries[2][1][0][0]), f * cR2);
+				Kokkos::atomic_add(
+					&values(this->_connEntries[2][1][1][0]), f * cR1);
+
+				f = this->_coefs(0, 0, 0, 0) * rate *
+					(comp1[Species::V] + comp2[Species::V]);
 				Kokkos::atomic_add(
 					&values(this->_connEntries[2][2][0][0]), f * cR2);
 				Kokkos::atomic_add(
 					&values(this->_connEntries[2][2][1][0]), f * cR1);
-				f = this->_coefs(0, 0, 0, 0) * rate *
-					(comp1[Species::V] + comp2[Species::V]);
-				Kokkos::atomic_add(
-					&values(this->_connEntries[2][3][0][0]), f * cR2);
-				Kokkos::atomic_add(
-					&values(this->_connEntries[2][3][1][0]), f * cR1);
 			}
+
 	}
 }
 
@@ -641,15 +694,39 @@ FeDissociationReaction::computeFlux(
 
 	// Large bubble is the reactant
 	if (this->_reactant >= numClusters) {
-		// H case
+		// Vacancy case
+                // B -> V_1 + B
+                        if (comp[Species::V] > 0) {
+                                // The standard cluster always gains the flux
+                                Kokkos::atomic_add(&fluxes[stdClusterId], f);
+
+                                // The average V decrease
+                                Kokkos::atomic_sub(&fluxes[ssbmId + 2], f * comp[Species::V]);
+                        }	
+
+
+
+		// He case
 		// B -> H_1 + B
 			if (comp[Species::He] > 0) {
 				// The standard cluster always gains the flux
 				Kokkos::atomic_add(&fluxes[stdClusterId], f);
 
-				// The average H decrease
+				// The average He decrease
 				Kokkos::atomic_sub(&fluxes[ssbmId + 1], f * comp[Species::He]);
 			}
+
+		// I case
+                // B -> I_1 + B
+                        if (comp[Species::He] > 0) {
+                                // The standard cluster always gains the flux
+                                Kokkos::atomic_add(&fluxes[stdClusterId], f);
+
+                                // The average V decrease
+                                Kokkos::atomic_sub(&fluxes[ssbmId + 2], f * comp[Species::V]);
+                        }
+
+
 	}
 }
 
@@ -673,7 +750,7 @@ FeDissociationReaction::computePartialDerivatives(
 	double omega = this->_clusterData->atomicVolume();
 	double T = this->_clusterData->temperature(gridIndex);
 	constexpr double k_B = ::xolotl::core::kBoltzmann;
-	double E_b = 1.9; // H in Void
+	double E_b = 1.9; // He in Void
 
 	rate *= (1.0 / omega) * std::exp(-E_b / (k_B * T));
 
@@ -700,30 +777,93 @@ FeDissociationReaction::computePartialDerivatives(
 
 	// Large bubble is the reactant
 	if (this->_reactant >= numClusters) {
-		// H case
-		// B -> H_1 + B
+		// He case
+		// B -> He_1 + B
 			if (comp[Species::He] > 0) {
 				// The standard cluster always gains the flux
+				// B -> B + He_1
 				if (this->_products[0] >= numClusters) {
 					Kokkos::atomic_add(
 						&values(this->_connEntries[2][0][0][0]), f * bC);
 				}
+				// B -> He_1 + B
 				else {
 					Kokkos::atomic_add(
 						&values(this->_connEntries[1][0][0][0]), f * bC);
 				}
 
-				// The H size decreases
+				// The He size decreases
 				f = this->_coefs(0, 0, 0, 0) * rate * comp[Species::He];
+				// B -> B + He_1
+				if (this->_products[0] >= numClusters) {
+					Kokkos::atomic_sub(
+						&values(this->_connEntries[1][1][0][0]), f * bC);
+				}
+				// B -> He_1 + B
+				else {
+					Kokkos::atomic_sub(
+						&values(this->_connEntries[2][1][0][0]), f * bC);
+				}
+			}
+		// V case
+		// B -> V_1 + B
+			if (comp[Species::V] > 0) {
+				// The standard cluster always gains the flux
+				// B -> B + V_1
+				if (this->_products[0] >= numClusters) {
+					Kokkos::atomic_add(
+						&values(this->_connEntries[2][0][0][0]), f * bC);
+				}
+				// B -> V_1 + B
+				else {
+					Kokkos::atomic_add(
+						&values(this->_connEntries[1][0][0][0]), f * bC);
+				}
+
+				// The V size decreases
+				f = this->_coefs(0, 0, 0, 0) * rate * comp[Species::V];
+				// B -> B + V_1
 				if (this->_products[0] >= numClusters) {
 					Kokkos::atomic_sub(
 						&values(this->_connEntries[1][2][0][0]), f * bC);
 				}
+				// B -> V_1 + B
 				else {
 					Kokkos::atomic_sub(
 						&values(this->_connEntries[2][2][0][0]), f * bC);
 				}
 			}
+
+		// I case
+                // B -> I_1 + B
+                        if (comp[Species::V] > 0) {
+                                // The standard cluster always gains the flux
+                                // B -> B + I_1
+                                if (this->_products[0] >= numClusters) {
+                                        Kokkos::atomic_add(
+                                                &values(this->_connEntries[2][0][0][0]), f * bC);
+                                }
+                                // B -> I_1 + B
+                                else {
+                                        Kokkos::atomic_add(
+                                                &values(this->_connEntries[1][0][0][0]), f * bC);
+                                }
+
+                                // The V size decreases
+                                f = this->_coefs(0, 0, 0, 0) * rate * comp[Species::V];
+                                // B -> B + I_1
+                                if (this->_products[0] >= numClusters) {
+                                        Kokkos::atomic_sub(
+                                                &values(this->_connEntries[1][2][0][0]), f * bC);
+                                }
+                                // B -> I_1 + B
+                                else {
+                                        Kokkos::atomic_sub(
+                                                &values(this->_connEntries[2][2][0][0]), f * bC);
+                                }
+                        }
+
+		
 	}
 }
 
